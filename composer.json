@@ -1,0 +1,32 @@
+{
+  "name": "tourze/wechat-mini-program-plugin-bundle",
+  "description": "微信小程序插件",
+  "type": "symfony-bundle",
+  "license": "MIT",
+  "require": {
+    "php": "^8.1",
+    "symfony/event-dispatcher": "^6.4",
+    "symfony/config": "^6.4",
+    "symfony/dependency-injection": "^6.4",
+    "symfony/http-kernel": "^6.4",
+    "symfony/framework-bundle": "^6.4",
+    "tourze/easy-admin-attribute": "0.0.*"
+  },
+  "autoload": {
+    "psr-4": {
+      "WechatMiniProgramPluginBundle\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "WechatMiniProgramPluginBundle\\Tests\\": "tests"
+    }
+  },
+  "require-dev": {
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^10.0"
+  },
+  "scripts": {
+    "phpstan": "phpstan analyse src -l 1"
+  }
+}

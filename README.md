@@ -1,1 +1,1 @@
-# wechat-mini-program-plugin-bundle
+# 微信小程序插件能力
