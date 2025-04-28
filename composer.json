@@ -12,6 +12,7 @@
     "symfony/framework-bundle": "^6.4",
     "tourze/easy-admin-attribute": "0.0.*",
     "tourze/json-rpc-core": "^0.0.6",
+    "tourze/wechat-mini-program-bundle": "0.0.*",
     "psr/log": "^3|^2|^1",
     "symfony/yaml": "^6.4 || ^7.1",
     "yiisoft/json": "^1.0"
