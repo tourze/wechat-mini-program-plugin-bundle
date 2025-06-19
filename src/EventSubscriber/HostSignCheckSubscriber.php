@@ -26,12 +26,12 @@ class HostSignCheckSubscriber
     public function onRequestStart(RequestStartEvent $event): void
     {
         $request = $event->getRequest();
-        if (!$request) {
+        if ($request === null) {
             return;
         }
 
         $hostSign = $request->headers->get('X-WECHAT-HOSTSIGN');
-        if (!$hostSign) {
+        if ($hostSign === null) {
             $this->logger->debug('找不到X-WECHAT-HOSTSIGN，非微信小程序插件请求', [
                 'request' => $request,
             ]);
@@ -44,7 +44,7 @@ class HostSignCheckSubscriber
 
         $referrer = $request->headers->get('referrer');
         preg_match('@https://servicewechat.com/(.*?)/(.*?)/page-frame.html@', $referrer, $match);
-        if (!$match) {
+        if (empty($match)) {
             $this->logger->warning('有HOSTSIGN，但是找不到AppID，请求不合法', [
                 'request' => $request,
                 'referrer' => $referrer,
@@ -56,7 +56,7 @@ class HostSignCheckSubscriber
         $appId = $match[1];
 
         $account = $this->accountRepository->findOneBy(['appId' => $appId]);
-        if (!$account) {
+        if ($account === null) {
             throw new ApiException('找不到小程序');
         }
 
