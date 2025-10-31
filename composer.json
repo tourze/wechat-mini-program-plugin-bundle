@@ -11,9 +11,10 @@
     "symfony/framework-bundle": "^7.3",
     "symfony/http-foundation": "^7.3",
     "symfony/http-kernel": "^7.3",
+    "symfony/property-access": "^7.3",
     "symfony/yaml": "^7.3",
     "tourze/bundle-dependency": "1.*",
-    "tourze/json-rpc-core": "0.0.*",
+    "tourze/json-rpc-core": "1.0.*",
     "tourze/symfony-dependency-service-loader": "1.*",
     "tourze/wechat-mini-program-bundle": "0.1.*",
     "yiisoft/json": "^1.0"
@@ -22,7 +23,7 @@
     "phpstan/phpstan": "^2.1",
     "phpunit/phpunit": "^11.5",
     "tourze/phpunit-base": "1.*",
-    "tourze/phpunit-symfony-kernel-test": "1.*",
+    "tourze/phpunit-symfony-kernel-test": "1.0.*",
     "tourze/phpunit-symfony-unit-test": "1.*"
   },
   "autoload": {
