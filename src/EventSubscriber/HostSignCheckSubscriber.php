@@ -3,10 +3,12 @@
 namespace WechatMiniProgramPluginBundle\EventSubscriber;
 
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autoconfigure;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\HttpFoundation\Request;
 use Tourze\JsonRPC\Core\Event\RequestStartEvent;
-use Tourze\JsonRPC\Core\Exception\ApiException;
 use WechatMiniProgramBundle\Repository\AccountRepository;
+use WechatMiniProgramPluginBundle\Exception\HostSignValidationException;
 use Yiisoft\Json\Json;
 
 /**
@@ -14,6 +16,7 @@ use Yiisoft\Json\Json;
  *
  * @see https://developers.weixin.qq.com/miniprogram/dev/framework/plugin/development.html
  */
+#[Autoconfigure(public: true)]
 class HostSignCheckSubscriber
 {
     public function __construct(
@@ -26,12 +29,12 @@ class HostSignCheckSubscriber
     public function onRequestStart(RequestStartEvent $event): void
     {
         $request = $event->getRequest();
-        if ($request === null) {
+        if (null === $request) {
             return;
         }
 
         $hostSign = $request->headers->get('X-WECHAT-HOSTSIGN');
-        if ($hostSign === null) {
+        if (null === $hostSign) {
             $this->logger->debug('找不到X-WECHAT-HOSTSIGN，非微信小程序插件请求', [
                 'request' => $request,
             ]);
@@ -39,44 +42,83 @@ class HostSignCheckSubscriber
             return;
         }
 
-        // {"noncestr":"NONCESTR", "timestamp":"TIMESTAMP", "signature":"SIGNATURE"}
-        $hostSign = Json::decode($hostSign);
-
-        $referrer = $request->headers->get('referrer');
-        preg_match('@https://servicewechat.com/(.*?)/(.*?)/page-frame.html@', $referrer, $match);
-        if (empty($match)) {
-            $this->logger->warning('有HOSTSIGN，但是找不到AppID，请求不合法', [
-                'request' => $request,
-                'referrer' => $referrer,
+        $hostSignData = Json::decode($hostSign);
+        if (
+            !is_array($hostSignData)
+            || !isset($hostSignData['noncestr'], $hostSignData['timestamp'], $hostSignData['signature'])
+            || !is_string($hostSignData['noncestr'])
+            || !is_string($hostSignData['timestamp'])
+            || !is_string($hostSignData['signature'])
+        ) {
+            $this->logger->warning('HOSTSIGN格式不合法', [
+                'hostSign' => $hostSign,
             ]);
 
             return;
         }
 
-        $appId = $match[1];
+        $appId = $this->extractAppIdFromReferrer($request);
 
+        if (null === $appId) {
+            return;
+        }
+
+        $this->validateSignature($hostSignData, $appId);
+    }
+
+    private function extractAppIdFromReferrer(Request $request): ?string
+    {
+        $referrer = $request->headers->get('referrer');
+        if (null === $referrer) {
+            $this->logger->warning('有HOSTSIGN，但是找不到referrer，请求不合法', [
+                'request' => $request,
+            ]);
+
+            return null;
+        }
+
+        $matches = [];
+        $pattern = '@https://servicewechat.com/(.*?)/(.*?)/page-frame.html@';
+        if (1 !== preg_match($pattern, $referrer, $matches)) {
+            $this->logger->warning('有HOSTSIGN，但是找不到AppID，请求不合法', [
+                'request' => $request,
+                'referrer' => $referrer,
+            ]);
+
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    /**
+     * @param array{noncestr: string, timestamp: string, signature: string} $hostSignData
+     */
+    private function validateSignature(array $hostSignData, string $appId): void
+    {
         $account = $this->accountRepository->findOneBy(['appId' => $appId]);
-        if ($account === null) {
-            throw new ApiException('找不到小程序');
+        if (null === $account) {
+            throw new HostSignValidationException('找不到小程序');
         }
 
         $list = [
             $account->getAppId(),
-            $hostSign['noncestr'],
-            $hostSign['timestamp'],
+            $hostSignData['noncestr'],
+            $hostSignData['timestamp'],
             $account->getPluginToken(),
         ];
         sort($list);
-        $list = implode('', $list);
-        $serverSign = sha1($list);
+        $signatureString = implode('', $list);
+        $serverSign = sha1($signatureString);
+
         $this->logger->debug('生成服务端签名字符串', [
-            'str' => $list,
+            'str' => $signatureString,
             'serverSign' => $serverSign,
-            'requestSign' => $hostSign['signature'],
+            'requestSign' => $hostSignData['signature'],
         ]);
 
-        if ($hostSign['signature'] !== $serverSign) {
-            throw new ApiException('非法请求，请检查插件配置');
+        if ($hostSignData['signature'] !== $serverSign) {
+            throw new HostSignValidationException('非法请求，请检查插件配置');
         }
     }
 }

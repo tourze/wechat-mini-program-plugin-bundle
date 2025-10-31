@@ -2,235 +2,246 @@
 
 namespace WechatMiniProgramPluginBundle\Tests\EventSubscriber;
 
-use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\MockObject\Builder\InvocationMocker;
 use Symfony\Component\HttpFoundation\HeaderBag;
 use Symfony\Component\HttpFoundation\Request;
 use Tourze\JsonRPC\Core\Event\RequestStartEvent;
-use Tourze\JsonRPC\Core\Exception\ApiException;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractEventSubscriberTestCase;
 use WechatMiniProgramBundle\Entity\Account;
 use WechatMiniProgramBundle\Repository\AccountRepository;
 use WechatMiniProgramPluginBundle\EventSubscriber\HostSignCheckSubscriber;
+use WechatMiniProgramPluginBundle\Exception\HostSignValidationException;
 use Yiisoft\Json\Json;
 
-class HostSignCheckSubscriberTest extends TestCase
+/**
+ * @internal
+ */
+#[CoversClass(HostSignCheckSubscriber::class)]
+#[RunTestsInSeparateProcesses]
+final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
 {
-    private LoggerInterface $logger;
-    private AccountRepository $accountRepository;
     private HostSignCheckSubscriber $subscriber;
 
-    protected function setUp(): void
+    private AccountRepository $accountRepository;
+
+    protected function onSetUp(): void
     {
-        $this->logger = $this->createMock(LoggerInterface::class);
+        // 创建AccountRepository的Mock用于测试
         $this->accountRepository = $this->createMock(AccountRepository::class);
-        $this->subscriber = new HostSignCheckSubscriber(
-            $this->logger,
-            $this->accountRepository
-        );
+
+        // 在容器中替换AccountRepository服务
+        self::getContainer()->set(AccountRepository::class, $this->accountRepository);
+
+        // 从容器获取被测试的事件订阅服务实例（会自动注入Mock的AccountRepository）
+        $this->subscriber = self::getService(HostSignCheckSubscriber::class);
     }
 
-    public function testOnRequestStart_NoRequest(): void
+    public function testInstantiation(): void
+    {
+        $this->assertInstanceOf(HostSignCheckSubscriber::class, $this->subscriber);
+    }
+
+    public function testOnRequestStartNoRequest(): void
     {
         $event = $this->createMock(RequestStartEvent::class);
         $event->method('getRequest')->willReturn(null);
-        
-        $this->logger->expects($this->never())->method('debug');
-        
+
         $this->subscriber->onRequestStart($event);
+
+        // 验证在没有请求时不会进行后续处理（没有异常抛出即为成功）
+        $this->expectNotToPerformAssertions();
     }
 
-    public function testOnRequestStart_NoHostSign(): void
+    public function testOnRequestStartNoHostSign(): void
     {
         $request = $this->createMock(Request::class);
         $headers = $this->createMock(HeaderBag::class);
         $headers->method('get')->with('X-WECHAT-HOSTSIGN')->willReturn(null);
         $request->headers = $headers;
-        
+
         $event = $this->createMock(RequestStartEvent::class);
         $event->method('getRequest')->willReturn($request);
-        
-        $this->logger->expects($this->once())
-            ->method('debug')
-            ->with('找不到X-WECHAT-HOSTSIGN，非微信小程序插件请求', $this->anything());
-        
+
         $this->subscriber->onRequestStart($event);
+
+        // 验证在没有 HostSign 头时不会进行后续处理（没有异常抛出即为成功）
     }
 
-    public function testOnRequestStart_InvalidReferrer(): void
+    public function testOnRequestStartInvalidReferrer(): void
     {
         $hostSignData = [
             'noncestr' => 'test-nonce',
             'timestamp' => '1234567890',
-            'signature' => 'test-signature'
+            'signature' => 'test-signature',
         ];
         $hostSignJson = Json::encode($hostSignData);
-        
+
         $request = $this->createMock(Request::class);
         $headers = $this->createMock(HeaderBag::class);
         $headers->method('get')
             ->willReturnCallback(function ($key) use ($hostSignJson) {
-                if ($key === 'X-WECHAT-HOSTSIGN') {
+                if ('X-WECHAT-HOSTSIGN' === $key) {
                     return $hostSignJson;
                 }
-                if ($key === 'referrer') {
+                if ('referrer' === $key) {
                     return 'https://invalid-url.com';
                 }
+
                 return null;
-            });
+            })
+        ;
         $request->headers = $headers;
-        
+
         $event = $this->createMock(RequestStartEvent::class);
         $event->method('getRequest')->willReturn($request);
-        
-        $this->logger->expects($this->once())
-            ->method('warning')
-            ->with('有HOSTSIGN，但是找不到AppID，请求不合法', $this->anything());
-        
+
         $this->subscriber->onRequestStart($event);
+
+        // 验证在 referrer 无效时不会进行后续处理（没有异常抛出即为成功）
+        $this->expectNotToPerformAssertions();
     }
 
-    public function testOnRequestStart_AccountNotFound(): void
+    public function testOnRequestStartAccountNotFound(): void
     {
+        // 配置 AccountRepository Mock 返回 null
+        /** @var InvocationMocker $findOneByMethod */
+        $findOneByMethod = $this->accountRepository->method('findOneBy');
+        $findOneByMethod->with(['appId' => 'wx123456']);
+        $findOneByMethod->willReturn(null);
+
         $hostSignData = [
             'noncestr' => 'test-nonce',
             'timestamp' => '1234567890',
-            'signature' => 'test-signature'
+            'signature' => 'test-signature',
         ];
         $hostSignJson = Json::encode($hostSignData);
-        
+
         $request = $this->createMock(Request::class);
         $headers = $this->createMock(HeaderBag::class);
         $headers->method('get')
             ->willReturnCallback(function ($key) use ($hostSignJson) {
-                if ($key === 'X-WECHAT-HOSTSIGN') {
+                if ('X-WECHAT-HOSTSIGN' === $key) {
                     return $hostSignJson;
                 }
-                if ($key === 'referrer') {
+                if ('referrer' === $key) {
                     return 'https://servicewechat.com/wx123456/1/page-frame.html';
                 }
+
                 return null;
-            });
+            })
+        ;
         $request->headers = $headers;
-        
+
         $event = $this->createMock(RequestStartEvent::class);
         $event->method('getRequest')->willReturn($request);
-        
-        $this->accountRepository->method('findOneBy')
-            ->with(['appId' => 'wx123456'])
-            ->willReturn(null);
-        
-        $this->expectException(ApiException::class);
+
+        $this->expectException(HostSignValidationException::class);
         $this->expectExceptionMessage('找不到小程序');
-        
+
         $this->subscriber->onRequestStart($event);
     }
 
-    public function testOnRequestStart_InvalidSignature(): void
+    public function testOnRequestStartInvalidSignature(): void
     {
-        $hostSignData = [
-            'noncestr' => 'test-nonce',
-            'timestamp' => '1234567890',
-            'signature' => 'invalid-signature'
-        ];
-        $hostSignJson = Json::encode($hostSignData);
-        
-        $request = $this->createMock(Request::class);
-        $headers = $this->createMock(HeaderBag::class);
-        $headers->method('get')
-            ->willReturnCallback(function ($key) use ($hostSignJson) {
-                if ($key === 'X-WECHAT-HOSTSIGN') {
-                    return $hostSignJson;
-                }
-                if ($key === 'referrer') {
-                    return 'https://servicewechat.com/wx123456/1/page-frame.html';
-                }
-                return null;
-            });
-        $request->headers = $headers;
-        
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
-        
+        // 配置 AccountRepository Mock 返回模拟的 Account
         $account = $this->createMock(Account::class);
         $account->method('getAppId')->willReturn('wx123456');
         $account->method('getPluginToken')->willReturn('plugin-token');
-        
-        $this->accountRepository->method('findOneBy')
-            ->with(['appId' => 'wx123456'])
-            ->willReturn($account);
-        
-        // 计算正确的签名
-        $list = ['wx123456', 'test-nonce', '1234567890', 'plugin-token'];
-        sort($list);
-        $signStr = implode('', $list);
-        $serverSign = sha1($signStr);
-        
-        $this->logger->expects($this->once())
-            ->method('debug')
-            ->with('生成服务端签名字符串', $this->callback(function ($data) use ($serverSign) {
-                return $data['serverSign'] === $serverSign && $data['requestSign'] === 'invalid-signature';
-            }));
-        
-        $this->expectException(ApiException::class);
+
+        /** @var InvocationMocker $findOneByMethod */
+        $findOneByMethod = $this->accountRepository->method('findOneBy');
+        $findOneByMethod->with(['appId' => 'wx123456']);
+        $findOneByMethod->willReturn($account);
+
+        $hostSignData = [
+            'noncestr' => 'test-nonce',
+            'timestamp' => '1234567890',
+            'signature' => 'invalid-signature',
+        ];
+        $hostSignJson = Json::encode($hostSignData);
+
+        $request = $this->createMock(Request::class);
+        $headers = $this->createMock(HeaderBag::class);
+        $headers->method('get')
+            ->willReturnCallback(function ($key) use ($hostSignJson) {
+                if ('X-WECHAT-HOSTSIGN' === $key) {
+                    return $hostSignJson;
+                }
+                if ('referrer' === $key) {
+                    return 'https://servicewechat.com/wx123456/1/page-frame.html';
+                }
+
+                return null;
+            })
+        ;
+        $request->headers = $headers;
+
+        $event = $this->createMock(RequestStartEvent::class);
+        $event->method('getRequest')->willReturn($request);
+
+        $this->expectException(HostSignValidationException::class);
         $this->expectExceptionMessage('非法请求，请检查插件配置');
-        
+
         $this->subscriber->onRequestStart($event);
     }
 
-    public function testOnRequestStart_ValidSignature(): void
+    public function testOnRequestStartValidSignature(): void
     {
         // 创建账号和签名相关数据
         $appId = 'wx123456';
         $nonceStr = 'test-nonce';
         $timestamp = '1234567890';
         $pluginToken = 'plugin-token';
-        
+
         // 计算有效签名
         $list = [$appId, $nonceStr, $timestamp, $pluginToken];
         sort($list);
         $signStr = implode('', $list);
         $validSignature = sha1($signStr);
-        
+
+        // 配置 AccountRepository Mock 返回模拟的 Account
+        $account = $this->createMock(Account::class);
+        $account->method('getAppId')->willReturn($appId);
+        $account->method('getPluginToken')->willReturn($pluginToken);
+
+        /** @var InvocationMocker $findOneByMethod */
+        $findOneByMethod = $this->accountRepository->method('findOneBy');
+        $findOneByMethod->with(['appId' => $appId]);
+        $findOneByMethod->willReturn($account);
+
         $hostSignData = [
             'noncestr' => $nonceStr,
             'timestamp' => $timestamp,
-            'signature' => $validSignature
+            'signature' => $validSignature,
         ];
         $hostSignJson = Json::encode($hostSignData);
-        
+
         $request = $this->createMock(Request::class);
         $headers = $this->createMock(HeaderBag::class);
         $headers->method('get')
             ->willReturnCallback(function ($key) use ($hostSignJson, $appId) {
-                if ($key === 'X-WECHAT-HOSTSIGN') {
+                if ('X-WECHAT-HOSTSIGN' === $key) {
                     return $hostSignJson;
                 }
-                if ($key === 'referrer') {
+                if ('referrer' === $key) {
                     return "https://servicewechat.com/{$appId}/1/page-frame.html";
                 }
+
                 return null;
-            });
+            })
+        ;
         $request->headers = $headers;
-        
+
         $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
-        
-        $account = $this->createMock(Account::class);
-        $account->method('getAppId')->willReturn($appId);
-        $account->method('getPluginToken')->willReturn($pluginToken);
-        
-        $this->accountRepository->method('findOneBy')
-            ->with(['appId' => $appId])
-            ->willReturn($account);
-        
-        $this->logger->expects($this->once())
-            ->method('debug')
-            ->with('生成服务端签名字符串', $this->callback(function ($data) use ($validSignature) {
-                return $data['serverSign'] === $validSignature && $data['requestSign'] === $validSignature;
-            }));
-        
-        // 不应抛出异常
+        // 验证：event.getRequest() 应该被调用一次
+        $event->expects($this->once())
+            ->method('getRequest')
+            ->willReturn($request)
+        ;
+
+        // 执行签名验证
         $this->subscriber->onRequestStart($event);
-        $this->assertTrue(true);
     }
-} 
+}

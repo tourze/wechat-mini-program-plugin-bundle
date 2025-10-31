@@ -2,37 +2,52 @@
 
 namespace WechatMiniProgramPluginBundle\Tests\DependencyInjection;
 
-use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Tourze\PHPUnitSymfonyUnitTest\AbstractDependencyInjectionExtensionTestCase;
 use WechatMiniProgramPluginBundle\DependencyInjection\WechatMiniProgramPluginExtension;
 use WechatMiniProgramPluginBundle\EventSubscriber\HostSignCheckSubscriber;
 
-class WechatMiniProgramPluginExtensionTest extends TestCase
+/**
+ * @internal
+ */
+#[CoversClass(WechatMiniProgramPluginExtension::class)]
+final class WechatMiniProgramPluginExtensionTest extends AbstractDependencyInjectionExtensionTestCase
 {
-    public function testLoad(): void
+    private WechatMiniProgramPluginExtension $extension;
+
+    private ContainerBuilder $container;
+
+    protected function setUp(): void
     {
-        $container = new ContainerBuilder();
-        $extension = new WechatMiniProgramPluginExtension();
-        
-        $extension->load([], $container);
-        
-        // 验证服务是否已注册
-        $this->assertTrue($container->hasDefinition(HostSignCheckSubscriber::class));
-        
-        // 验证服务的自动装配和自动配置
-        $definition = $container->getDefinition(HostSignCheckSubscriber::class);
-        $this->assertTrue($definition->isAutowired());
-        $this->assertTrue($definition->isAutoconfigured());
+        parent::setUp();
+
+        $this->extension = new WechatMiniProgramPluginExtension();
+        $this->container = new ContainerBuilder();
+        $this->container->setParameter('kernel.environment', 'test');
     }
-    
+
+    protected function getExtension(): WechatMiniProgramPluginExtension
+    {
+        return $this->extension;
+    }
+
+    protected function getContainer(): ContainerBuilder
+    {
+        return $this->container;
+    }
+
     public function testLoadWithEmptyConfiguration(): void
     {
-        $container = new ContainerBuilder();
-        $extension = new WechatMiniProgramPluginExtension();
-        
-        $extension->load([], $container);
-        
-        // 验证即使配置为空，加载过程也不应抛出异常
-        $this->assertTrue(true);
+        // 加载扩展配置（空配置）
+        $this->extension->load([], $this->container);
+
+        // 验证即使配置为空，加载过程也能成功并注册核心服务
+        $this->assertTrue($this->container->hasDefinition(HostSignCheckSubscriber::class));
+
+        // 验证服务定义正确
+        $serviceDefinition = $this->container->getDefinition(HostSignCheckSubscriber::class);
+        $this->assertTrue($serviceDefinition->isAutowired());
+        $this->assertTrue($serviceDefinition->isAutoconfigured());
     }
-} 
+}

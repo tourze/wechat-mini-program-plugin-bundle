@@ -6,3 +6,9 @@ services:
 
   WechatMiniProgramPluginBundle\EventSubscriber\:
     resource: '../../EventSubscriber/'
+
+  # EventSubscriber使用默认自动装配
+  WechatMiniProgramPluginBundle\EventSubscriber\HostSignCheckSubscriber:
+    arguments:
+      $logger: '@logger'
+      $accountRepository: '@WechatMiniProgramBundle\Repository\AccountRepository'
