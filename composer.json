@@ -15,7 +15,7 @@
     "symfony/yaml": "^7.3",
     "tourze/bundle-dependency": "1.*",
     "tourze/json-rpc-core": "1.0.*",
-    "tourze/symfony-dependency-service-loader": "1.*",
+    "tourze/symfony-dependency-service-loader": "1.0.*",
     "tourze/wechat-mini-program-bundle": "0.1.*",
     "yiisoft/json": "^1.0"
   },
