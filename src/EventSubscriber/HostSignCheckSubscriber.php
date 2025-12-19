@@ -4,6 +4,7 @@ namespace WechatMiniProgramPluginBundle\EventSubscriber;
 
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autoconfigure;
+use Monolog\Attribute\WithMonologChannel;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
 use Tourze\JsonRPC\Core\Event\RequestStartEvent;
@@ -17,7 +18,8 @@ use Yiisoft\Json\Json;
  * @see https://developers.weixin.qq.com/miniprogram/dev/framework/plugin/development.html
  */
 #[Autoconfigure(public: true)]
-class HostSignCheckSubscriber
+#[WithMonologChannel(channel: 'wechat_mini_program_plugin')]
+final class HostSignCheckSubscriber
 {
     public function __construct(
         private readonly LoggerInterface $logger,

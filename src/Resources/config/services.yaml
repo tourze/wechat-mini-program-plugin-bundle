@@ -3,12 +3,8 @@ services:
   _defaults:
     autowire: true      # Automatically injects dependencies in your services.
     autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+    public: false
 
   WechatMiniProgramPluginBundle\EventSubscriber\:
     resource: '../../EventSubscriber/'
-
-  # EventSubscriber使用默认自动装配
-  WechatMiniProgramPluginBundle\EventSubscriber\HostSignCheckSubscriber:
-    arguments:
-      $logger: '@logger'
-      $accountRepository: '@WechatMiniProgramBundle\Repository\AccountRepository'
+    public: true

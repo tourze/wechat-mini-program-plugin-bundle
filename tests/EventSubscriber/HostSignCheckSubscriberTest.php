@@ -4,7 +4,6 @@ namespace WechatMiniProgramPluginBundle\Tests\EventSubscriber;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
-use PHPUnit\Framework\MockObject\Builder\InvocationMocker;
 use Symfony\Component\HttpFoundation\HeaderBag;
 use Symfony\Component\HttpFoundation\Request;
 use Tourze\JsonRPC\Core\Event\RequestStartEvent;
@@ -28,14 +27,26 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
 
     protected function onSetUp(): void
     {
-        // 创建AccountRepository的Mock用于测试
-        $this->accountRepository = $this->createMock(AccountRepository::class);
-
-        // 在容器中替换AccountRepository服务
-        self::getContainer()->set(AccountRepository::class, $this->accountRepository);
-
-        // 从容器获取被测试的事件订阅服务实例（会自动注入Mock的AccountRepository）
+        // 使用真实的AccountRepository服务
+        $this->accountRepository = self::getService(AccountRepository::class);
         $this->subscriber = self::getService(HostSignCheckSubscriber::class);
+    }
+
+    /**
+     * 创建测试用的Account实体
+     */
+    private function createTestAccount(string $appId, ?string $pluginToken = null): Account
+    {
+        $account = new Account();
+        $account->setName("测试小程序-{$appId}");
+        $account->setAppId($appId);
+        $account->setAppSecret('test-secret');
+        $account->setValid(true);
+        if (null !== $pluginToken) {
+            $account->setPluginToken($pluginToken);
+        }
+
+        return $this->persistAndFlush($account);
     }
 
     public function testInstantiation(): void
@@ -45,8 +56,7 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
 
     public function testOnRequestStartNoRequest(): void
     {
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn(null);
+        $event = new RequestStartEvent();
 
         $this->subscriber->onRequestStart($event);
 
@@ -61,8 +71,7 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         $headers->method('get')->with('X-WECHAT-HOSTSIGN')->willReturn(null);
         $request->headers = $headers;
 
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
+        $event = new RequestStartEvent($request);
 
         $this->subscriber->onRequestStart($event);
 
@@ -94,8 +103,7 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         ;
         $request->headers = $headers;
 
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
+        $event = new RequestStartEvent($request);
 
         $this->subscriber->onRequestStart($event);
 
@@ -105,12 +113,6 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
 
     public function testOnRequestStartAccountNotFound(): void
     {
-        // 配置 AccountRepository Mock 返回 null
-        /** @var InvocationMocker $findOneByMethod */
-        $findOneByMethod = $this->accountRepository->method('findOneBy');
-        $findOneByMethod->with(['appId' => 'wx123456']);
-        $findOneByMethod->willReturn(null);
-
         $hostSignData = [
             'noncestr' => 'test-nonce',
             'timestamp' => '1234567890',
@@ -134,8 +136,7 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         ;
         $request->headers = $headers;
 
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
+        $event = new RequestStartEvent($request);
 
         $this->expectException(HostSignValidationException::class);
         $this->expectExceptionMessage('找不到小程序');
@@ -145,15 +146,8 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
 
     public function testOnRequestStartInvalidSignature(): void
     {
-        // 配置 AccountRepository Mock 返回模拟的 Account
-        $account = $this->createMock(Account::class);
-        $account->method('getAppId')->willReturn('wx123456');
-        $account->method('getPluginToken')->willReturn('plugin-token');
-
-        /** @var InvocationMocker $findOneByMethod */
-        $findOneByMethod = $this->accountRepository->method('findOneBy');
-        $findOneByMethod->with(['appId' => 'wx123456']);
-        $findOneByMethod->willReturn($account);
+        // 创建测试账号，设置pluginToken
+        $this->createTestAccount('wx123456', 'plugin-token');
 
         $hostSignData = [
             'noncestr' => 'test-nonce',
@@ -178,8 +172,7 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         ;
         $request->headers = $headers;
 
-        $event = $this->createMock(RequestStartEvent::class);
-        $event->method('getRequest')->willReturn($request);
+        $event = new RequestStartEvent($request);
 
         $this->expectException(HostSignValidationException::class);
         $this->expectExceptionMessage('非法请求，请检查插件配置');
@@ -201,15 +194,8 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         $signStr = implode('', $list);
         $validSignature = sha1($signStr);
 
-        // 配置 AccountRepository Mock 返回模拟的 Account
-        $account = $this->createMock(Account::class);
-        $account->method('getAppId')->willReturn($appId);
-        $account->method('getPluginToken')->willReturn($pluginToken);
-
-        /** @var InvocationMocker $findOneByMethod */
-        $findOneByMethod = $this->accountRepository->method('findOneBy');
-        $findOneByMethod->with(['appId' => $appId]);
-        $findOneByMethod->willReturn($account);
+        // 创建测试账号
+        $this->createTestAccount($appId, $pluginToken);
 
         $hostSignData = [
             'noncestr' => $nonceStr,
@@ -234,14 +220,10 @@ final class HostSignCheckSubscriberTest extends AbstractEventSubscriberTestCase
         ;
         $request->headers = $headers;
 
-        $event = $this->createMock(RequestStartEvent::class);
-        // 验证：event.getRequest() 应该被调用一次
-        $event->expects($this->once())
-            ->method('getRequest')
-            ->willReturn($request)
-        ;
+        $event = new RequestStartEvent($request);
 
-        // 执行签名验证
+        // 执行签名验证，应该不抛出异常
+        $this->expectNotToPerformAssertions();
         $this->subscriber->onRequestStart($event);
     }
 }
